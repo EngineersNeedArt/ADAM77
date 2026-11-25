@@ -161,17 +161,28 @@ void on_key_press (int key) {
 
 void setup () {
     Serial.begin (115200);      // USB debug console.
+    while (!Serial && millis () < 2000) {
+        // Give a debug console a moment to connect.
+    }
+    Serial.println ("Adam77 starting");
+    if (CrashReport) {
+        Serial.print (CrashReport);     // Why the previous run restarted, if it crashed.
+    }
+
     Serial1.begin (HOST_BAUD, HOST_FORMAT);
     pinMode (PIEZO, OUTPUT);
 
+    Serial.println ("setup: display");
     tft.begin ();
     tft.setRotation (3);
     tft.setFont (LiberationMono_8_Bold);
     tft.fillScreen (background_color);
     text.begin (NUM_ROWS, NUM_COLUMNS);
 
+    Serial.println ("setup: USB host");
     usb_host.begin ();
     keyboard.attachPress (on_key_press);
+    Serial.println ("setup: done");
 
     const char *banner = "ADAM77 READY\r\n";
     while (*banner) {

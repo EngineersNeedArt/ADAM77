@@ -7,20 +7,24 @@ There's no polyfuse on the breadboard. Each board keeps its own power, and only 
 - **Teensy:** power it from its micro-USB cable to the Mac, the same cable used for programming. Leave the Teensy's VUSB–VIN trace intact. **VIN** is then the 5 V rail, and **3.3V** is the Teensy's regulator output.
 - **PAL-2:** keep powering it from its USB-to-TTL adapter, but use only the adapter's 5 V and GND wires. Its TXD and RXD wires come off the PAL-2 and go to the Teensy instead (see below).
 - **Never connect the two boards' 5 V lines together.** Join their grounds only.
+- **Connect a Teensy GND pin to the breadboard's ground rail.** Without it, the TFT's backlight still lights (dimly) through the signal lines, but the display ignores every command and the screen stays blank.
 
 ## ILI9341 TFT (SPI module)
 
-| TFT pin | Teensy 4.1 |
-| --- | --- |
-| VCC | VIN (5 V), if the module has a 3.3 V regulator, as most red 2.8" boards do. Otherwise use 3.3V. |
-| GND | GND |
-| CS | 10 |
-| RESET | 3.3V |
-| D/C | 9 |
-| SDI (MOSI) | 11 |
-| SCK | 13 |
-| LED | VIN through a 100 Ω resistor |
-| SDO (MISO) | 12 (optional) |
+|  TFT pin  | Teensy 4.1 |
+|-----------|------------|
+|    VCC    | VIN(5V)[1] |
+|    GND    |    GND     |
+|    CS     |     10     |
+|   RESET   |    3.3V    |
+|    D/C    |     9      |
+| SDI(MOSI) |     11     |
+|    SCK    |     13     |
+|    LED    |   VIN [2]  |
+| SDO(MISO) |  12 (opt.) |
+
+[1] If the module has a 3.3 V regulator, as most red 2.8" boards do. Otherwise use 3.3V.
+[2] Through a 100 Ω resistor.
 
 ## Serial to the PAL-2
 
