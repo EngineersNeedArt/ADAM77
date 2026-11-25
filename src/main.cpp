@@ -1,5 +1,5 @@
 // ==============================================================================
-// Adam77 (Teensy 4.0)
+// Adam77 (Teensy 4.1)
 // A 40x24 ASCII terminal for early 8-bit computers such as the KIM-1.
 //
 //   USB keyboard (USB host port) --> Serial1 TX --> KIM-1 TTY input
@@ -141,6 +141,9 @@ void handle_host_char (char c) {
 
 void on_key_press (int key) {
     // USBHost_t36 hands over ASCII for ordinary keys (with Ctrl applied).
+    if (key == KEYD_DELETE) {
+        key = ASCII_RUBOUT;     // The KIM-1 sets its baud rate from a RUBOUT after reset.
+    }
     if (key <= 0 || key > 0x7F) {
         return;     // Function, arrow keys, etc.: not mapped yet.
     }
@@ -179,6 +182,11 @@ void setup () {
 
 void loop () {
     usb_host.Task ();
+
+    // Bring-up aid: text typed in `pio device monitor` is sent as if it came from the keyboard.
+    while (Serial.available ()) {
+        on_key_press (Serial.read ());
+    }
 
     while (Serial1.available ()) {
         handle_host_char ((char) Serial1.read ());
