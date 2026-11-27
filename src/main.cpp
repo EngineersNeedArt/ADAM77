@@ -4,6 +4,7 @@
 //
 //   USB keyboard (USB host port) --> Serial1 TX --> KIM-1 TTY input
 //   KIM-1 TTY output --> Serial1 RX --> 40x24 text on an ILI9341 320x240 TFT
+//   F2: pick a file on the microSD card and send it to the KIM-1 (paper tapes)
 //
 // The display code descends from Adam74 (github.com/EngineersNeedArt/Adam74).
 // ==============================================================================
@@ -11,6 +12,7 @@
 #include <Arduino.h>
 #include <ILI9341_t3.h>
 #include <USBHost_t36.h>
+#include <SD.h>
 #include "TextBuffer.h"
 #include "font_LiberationMonoBold.h"
 
@@ -41,7 +43,16 @@
 #define ASCII_LF                0x0A
 #define ASCII_FF                0x0C
 #define ASCII_CR                0x0D
+#define ASCII_ESC               0x1B
 #define ASCII_RUBOUT            0x7F
+
+// --- Paper tapes from the microSD card ---------------------------------------
+#define FILE_MENU_KEY           KEYD_F2
+#define MAX_TAPE_FILES          128
+#define MAX_TAPE_NAME           64
+#define MENU_FIRST_ROW          2       // Rows 0-1: title. Rows 2-21: files. Row 23: help.
+#define MENU_LIST_ROWS          20
+#define ECHO_TIMEOUT_MS         50      // A character takes about 9 ms at 1200 baud 8N2.
 
 ILI9341_t3 tft = ILI9341_t3 (TFT_CS, TFT_DC);
 TextBuffer text = TextBuffer ();
@@ -61,12 +72,22 @@ int16_t cursor_y = 0;
 bool cursor_visible = false;
 elapsedMillis cursor_timer;
 
+enum Mode { MODE_TERMINAL, MODE_FILE_MENU, MODE_SENDING };
+Mode mode = MODE_TERMINAL;
+
+char tape_names[MAX_TAPE_FILES][MAX_TAPE_NAME];
+int16_t tape_count = 0;
+int16_t menu_selection = 0;
+int16_t menu_top = 0;
+const char *menu_message = NULL;    // Shown instead of the list (no card, no files).
+int16_t pending_send = -1;          // Index of the file to send, set by the menu.
+bool cancel_send = false;
+
 // ------------------------------------------------------------------------------
 // Display
 // ------------------------------------------------------------------------------
 
-void draw_cell (int16_t col, int16_t row, bool inverted) {
-    char character = text.getCharRowColumn (row, col) & 0x7F;
+void draw_char_at (int16_t col, int16_t row, char character, bool inverted) {
     int16_t x = col * X_ADVANCE;
     int16_t y = row * Y_ADVANCE;
     tft.fillRect (x, y, X_ADVANCE, Y_ADVANCE, inverted ? foreground_color : background_color);
@@ -74,6 +95,18 @@ void draw_cell (int16_t col, int16_t row, bool inverted) {
         tft.setCursor (x + CHAR_X_MARGIN, y + CHAR_Y_MARGIN);
         tft.setTextColor (inverted ? background_color : foreground_color);
         tft.drawFontChar (character);
+    }
+}
+
+void draw_cell (int16_t col, int16_t row, bool inverted) {
+    draw_char_at (col, row, text.getCharRowColumn (row, col) & 0x7F, inverted);
+}
+
+// Draws 'string' starting at 'col', padded with spaces (or cut off) to 'width' cells.
+void draw_string_at (int16_t col, int16_t row, const char *string, bool inverted, int16_t width) {
+    for (int16_t i = 0; i < width && col + i < NUM_COLUMNS; i++) {
+        char character = *string ? *string++ : ' ';
+        draw_char_at (col + i, row, character, inverted);
     }
 }
 
@@ -96,6 +129,12 @@ void flash_cursor () {
     cursor_visible = !cursor_visible;
     draw_cell (cursor_x, cursor_y, cursor_visible);
     cursor_timer = 0;
+}
+
+void restore_terminal () {
+    refresh_display ();
+    cursor_visible = false;
+    flash_cursor ();
 }
 
 void line_feed () {
@@ -161,9 +200,189 @@ void on_key_press (int key) {
     Serial1.write (c);  // No local echo: the KIM-1 echoes what it receives.
 }
 
+// ------------------------------------------------------------------------------
+// File menu (F2): paper tapes and text files on the microSD card
+// ------------------------------------------------------------------------------
+
+int compare_names (const void *a, const void *b) {
+    return strcasecmp ((const char *) a, (const char *) b);
+}
+
+// Fills tape_names with the files in the card's top folder, sorted by name.
+void read_tape_directory () {
+    tape_count = 0;
+    menu_message = NULL;
+    if (!SD.begin (BUILTIN_SDCARD)) {      // Called each time, so a card can be swapped.
+        menu_message = "NO SD CARD";
+        return;
+    }
+    File root = SD.open ("/");
+    while (tape_count < MAX_TAPE_FILES) {
+        File entry = root.openNextFile ();
+        if (!entry) {
+            break;
+        }
+        // Skip folders, and hidden files such as the "._" files macOS leaves behind.
+        if (!entry.isDirectory () && entry.name ()[0] != '.') {
+            strlcpy (tape_names[tape_count], entry.name (), MAX_TAPE_NAME);
+            tape_count++;
+        }
+        entry.close ();
+    }
+    root.close ();
+    qsort (tape_names, tape_count, MAX_TAPE_NAME, compare_names);
+    if (tape_count == 0) {
+        menu_message = "NO FILES ON SD CARD";
+    }
+}
+
+void draw_file_menu () {
+    draw_string_at (0, 0, " SEND FILE FROM SD CARD", true, NUM_COLUMNS);
+    draw_string_at (0, 1, "", false, NUM_COLUMNS);
+    for (int16_t i = 0; i < MENU_LIST_ROWS; i++) {
+        int16_t row = MENU_FIRST_ROW + i;
+        int16_t index = menu_top + i;
+        if (menu_message && i == 0) {
+            draw_string_at (1, row, menu_message, false, NUM_COLUMNS - 1);
+        } else if (!menu_message && index < tape_count) {
+            draw_string_at (0, row, "", false, 1);
+            draw_string_at (1, row, tape_names[index], index == menu_selection, NUM_COLUMNS - 2);
+            draw_string_at (NUM_COLUMNS - 1, row, "", false, 1);
+        } else {
+            draw_string_at (0, row, "", false, NUM_COLUMNS);
+        }
+    }
+    draw_string_at (0, NUM_ROWS - 2, "", false, NUM_COLUMNS);
+    draw_string_at (0, NUM_ROWS - 1, menu_message ? " ESC: BACK" : " ENTER: SEND   ESC: BACK", true, NUM_COLUMNS);
+}
+
+void open_file_menu () {
+    hide_cursor ();
+    mode = MODE_FILE_MENU;
+    read_tape_directory ();
+    menu_selection = 0;
+    menu_top = 0;
+    draw_file_menu ();
+}
+
+void close_file_menu () {
+    mode = MODE_TERMINAL;
+    restore_terminal ();
+}
+
+void file_menu_key (int key) {
+    if (key == ASCII_ESC || key == FILE_MENU_KEY) {
+        close_file_menu ();
+        return;
+    }
+    if (menu_message) {
+        return;     // Nothing to choose.
+    }
+    int16_t selection = menu_selection;
+    switch (key) {
+        case KEYD_UP:           selection--;                    break;
+        case KEYD_DOWN:         selection++;                    break;
+        case KEYD_PAGE_UP:      selection -= MENU_LIST_ROWS;    break;
+        case KEYD_PAGE_DOWN:    selection += MENU_LIST_ROWS;    break;
+        case KEYD_HOME:         selection = 0;                  break;
+        case KEYD_END:          selection = tape_count - 1;     break;
+        case ASCII_LF:
+        case ASCII_CR:
+            pending_send = menu_selection;      // loop () sends it once the menu is closed.
+            close_file_menu ();
+            return;
+        default:
+            return;
+    }
+    menu_selection = constrain (selection, 0, tape_count - 1);
+    if (menu_selection < menu_top) {
+        menu_top = menu_selection;
+    } else if (menu_selection >= menu_top + MENU_LIST_ROWS) {
+        menu_top = menu_selection - MENU_LIST_ROWS + 1;
+    }
+    draw_file_menu ();
+}
+
+// Sends one character, then waits for the KIM-1 to echo it before going on.
+// The KIM-1 receives in software, so sending faster than it echoes loses characters.
+void send_paced (char c) {
+    Serial1.write (c);
+    elapsedMillis waited;
+    while (waited < ECHO_TIMEOUT_MS) {
+        usb_host.Task ();       // Keeps Esc working during a send.
+        if (Serial1.available ()) {
+            handle_host_char ((char) Serial1.read ());
+            return;
+        }
+    }
+}
+
+// Paper-tape files (first character ';') are sent after an "L", which puts the KIM-1
+// monitor in paper-tape load mode, with CR LF line ends. Any other file is sent as if
+// typed, with CR line ends (BASIC listings and the like).
+void send_file (const char *name) {
+    File file = SD.open (name);
+    if (!file) {
+        beep ();
+        return;
+    }
+    int first = file.peek ();
+    while (first == ' ' || first == '\t' || first == ASCII_CR || first == ASCII_LF) {
+        file.read ();
+        first = file.peek ();
+    }
+    bool is_tape = (first == ';');
+    Serial.printf ("send: %s (%s)\n", name, is_tape ? "paper tape" : "text");
+
+    mode = MODE_SENDING;
+    cancel_send = false;
+    if (is_tape) {
+        send_paced ('L');
+    }
+    char previous = 0;
+    while (file.available () && !cancel_send) {
+        char c = file.read ();
+        if (c == ASCII_CR || c == ASCII_LF) {
+            if (c == ASCII_LF && previous == ASCII_CR) {
+                previous = c;
+                continue;       // Second half of a CR LF already sent.
+            }
+            send_paced (ASCII_CR);
+            if (is_tape) {
+                send_paced (ASCII_LF);
+            }
+        } else if (c >= ' ' && c < ASCII_RUBOUT) {
+            send_paced (c);
+        }
+        previous = c;
+    }
+    file.close ();
+    mode = MODE_TERMINAL;
+    Serial.println (cancel_send ? "send: cancelled" : "send: done");
+    beep ();
+}
+
+// ------------------------------------------------------------------------------
+
 void on_keyboard_press (int key) {
     Serial.printf ("key: 0x%02X\n", key);     // Bring-up aid: log what the USB keyboard sends.
-    on_key_press (key);
+    switch (mode) {
+        case MODE_TERMINAL:
+            if (key == FILE_MENU_KEY) {
+                open_file_menu ();
+            } else {
+                on_key_press (key);
+            }
+            break;
+        case MODE_FILE_MENU:
+            file_menu_key (key);
+            break;
+        case MODE_SENDING:
+            if (key == ASCII_ESC) {
+                cancel_send = true;
+            }
+            break;
+    }
 }
 
 void check_keyboard_connection () {
@@ -222,11 +441,18 @@ void loop () {
         on_key_press (Serial.read ());
     }
 
-    while (Serial1.available ()) {
+    if (pending_send >= 0) {
+        int16_t index = pending_send;
+        pending_send = -1;
+        send_file (tape_names[index]);
+    }
+
+    // While the file menu is up, host output waits in the serial buffer.
+    while (mode == MODE_TERMINAL && Serial1.available ()) {
         handle_host_char ((char) Serial1.read ());
     }
 
-    if (cursor_timer >= CURSOR_FLASH_INTERVAL) {
+    if (mode == MODE_TERMINAL && cursor_timer >= CURSOR_FLASH_INTERVAL) {
         flash_cursor ();
     }
 }

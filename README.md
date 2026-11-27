@@ -22,6 +22,17 @@ pio run -t upload    # build and flash (Teensy Loader opens)
 pio device monitor   # USB debug console
 ```
 
+## Loading files from the SD card
+
+Put files in the top folder of a microSD card (FAT16, FAT32 or exFAT) in the Teensy 4.1's own card socket.
+
+1. At the KIM-1 monitor prompt, press **F2**. A list of the card's files appears.
+2. Choose one with the arrow keys (Page Up/Down and Home/End also work), then press **Enter**. Press **Esc** to go back without sending.
+3. Adam77 sends the file:
+   - **Paper tapes** (files whose first character is `;`, in MOS Technology format): it types `L` first, putting the monitor in paper-tape load mode.
+   - **Any other file** is sent as if typed, with CR line ends. Use this for BASIC listings and the like.
+4. Each character waits for the KIM-1's echo before the next is sent, so the load runs as fast as the KIM-1 can take it. Press **Esc** to stop a send. A beep means it's finished.
+
 ## Design notes
 
 - **Serial:** Uses the Teensy's hardware UART (`Serial1`, pins 0/1) at 1200 baud 8N2. Nothing is bit-banged. The KIM-1 measures the baud rate from the first RUBOUT after reset, so any standard rate works.
@@ -57,4 +68,4 @@ None of these are decided yet.
 - **Audio in.** A one-transistor amplifier and a small speaker, like the circuit in the KIM-1 manual, driven by a PAL-2 port pin. Then programs such as MUSICBOX from *The First Book of KIM* play without another board. The signal never touches a Teensy pin, so 5 V is fine. The Teensy's bell output could feed the same amplifier through its own resistor, so one speaker and one volume pot serve both.
 - **DB-9 RS-232 port.** A MAX3232 transceiver and a DB-9 wired as DTE, like a PC's serial port, so a straight cable reaches DCE machines such as the PAL-1. Keep the TTL header for the PAL-2: the TTL header on `Serial1`, the DB-9 on `Serial2`, and a setting picks the active one.
 - **Settings screen.** Instead of DIP switches: a key such as F1 opens a settings screen, with the choices saved in the Teensy's EEPROM. Settings: baud rate, data bits / parity / stop bits, which port, local echo, adding LF after CR, upper-case only, text color. Holding a key at power-up restores the defaults. Fuller support for other machines would eventually need a subset of cursor-control codes, such as VT52 or ADM-3A.
-- **Paper tapes from SD.** Use the Teensy 4.1's built-in microSD socket, not the display's: it has its own fast SDIO bus instead of sharing SPI with the TFT. Teensyduino's `SD` library (SdFat) reads FAT16, FAT32 and exFAT. A key opens a list of tape files, selected with the arrow keys and Enter. Adam77 then sends the file to the PAL-2, paced by the PAL-2's echo. The PAL-2 must be in its paper-tape load (`L`) mode first, which Adam77 could also type. Possible extras: plain-text files sent as if typed (BASIC listings), Intel HEX converted to MOS paper-tape format as it's sent, and capturing a tape the PAL-2 punches with `Q` into a new file.
+- **More from the SD card.** The basic loader works (see "Loading files from the SD card"). Still to do: folders, Intel HEX converted to MOS paper-tape format as it's sent, and capturing a tape the PAL-2 punches with `Q` into a new file.
