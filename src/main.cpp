@@ -49,6 +49,10 @@ TextBuffer text = TextBuffer ();
 USBHost usb_host;
 USBHub usb_hub (usb_host);
 KeyboardController keyboard (usb_host);
+// Many keyboards also expose extra HID interfaces (media keys, etc.) that need parsers.
+USBHIDParser hid1 (usb_host);
+USBHIDParser hid2 (usb_host);
+USBHIDParser hid3 (usb_host);
 
 uint16_t foreground_color = ILI9341_GREEN;
 uint16_t background_color = ILI9341_BLACK;
@@ -157,6 +161,24 @@ void on_key_press (int key) {
     Serial1.write (c);  // No local echo: the KIM-1 echoes what it receives.
 }
 
+void on_keyboard_press (int key) {
+    Serial.printf ("key: 0x%02X\n", key);     // Bring-up aid: log what the USB keyboard sends.
+    on_key_press (key);
+}
+
+void check_keyboard_connection () {
+    static bool was_connected = false;
+    bool connected = keyboard;
+    if (connected != was_connected) {
+        if (connected) {
+            Serial.printf ("keyboard: connected (%04X:%04X)\n", keyboard.idVendor (), keyboard.idProduct ());
+        } else {
+            Serial.println ("keyboard: disconnected");
+        }
+        was_connected = connected;
+    }
+}
+
 // ------------------------------------------------------------------------------
 
 void setup () {
@@ -181,7 +203,7 @@ void setup () {
 
     Serial.println ("setup: USB host");
     usb_host.begin ();
-    keyboard.attachPress (on_key_press);
+    keyboard.attachPress (on_keyboard_press);
     Serial.println ("setup: done");
 
     const char *banner = "ADAM77 READY\r\n";
@@ -193,6 +215,7 @@ void setup () {
 
 void loop () {
     usb_host.Task ();
+    check_keyboard_connection ();
 
     // Bring-up aid: text typed in `pio device monitor` is sent as if it came from the keyboard.
     while (Serial.available ()) {
