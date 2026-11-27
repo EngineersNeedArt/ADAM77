@@ -30,13 +30,13 @@ There's no polyfuse on the breadboard. Each board keeps its own power, and only 
 
 Adam77 takes the adapter's place: each Teensy pin goes where the matching adapter wire went.
 
-| PAL-2 connection (where the adapter wire went) | Teensy 4.1 |
+| PAL-2 Application Connector pin | Teensy 4.1 |
 | --- | --- |
-| adapter's **TXD** wire, which feeds PAL-2 RX | **pin 1 (TX1)**, connected directly. 3.3 V is enough for a 5 V TTL input. |
-| adapter's **RXD** wire, which comes from PAL-2 TX | **pin 0 (RX1)**, through the level shifter below. |
+| **`TTL (IN) KYBD`**, the PAL-2's input (the adapter's TXD wire went here) | **pin 1 (TX1)**, connected directly. 3.3 V is enough for a 5 V TTL input. |
+| **`TTL (OUT) PTR`**, the PAL-2's output (the adapter's RXD wire went here) | **pin 0 (RX1)**, through the level shifter below. |
 | GND | GND |
 
-**Check first:** measure the PAL-2's TX line with a multimeter while it's idle. It idles high. On the PAL-2 header, this is the pin labeled **RXD**: the labels are from the adapter's point of view. Ours measured **4.18 V**.
+**Check first:** measure the PAL-2's TX line with a multimeter while it's idle. It idles high. On the PAL-2's Application Connector, this is **`TTL (OUT) PTR`**. Ours measured **4.18 V**.
 - About **3.3 V**: wire it straight to pin 0.
 - Above that: it must be shifted down. The Teensy 4.1 is **not** 5 V tolerant. Use either:
   - **Resistor divider:** PAL-2 TX → 10 kΩ → pin 0, then pin 0 → 20 kΩ → GND (two 10 kΩ in series). That gives about 2.8 V from 4.18 V, and still only 3.3 V if the line ever reaches a full 5 V. It's plenty fast for 1200 baud. (A 10 kΩ / 15 kΩ divider gives only about 2.5 V from 4.18 V, too close to the Teensy's 2.3 V minimum for a reliable high.)
