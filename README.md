@@ -65,7 +65,27 @@ Put files in the top folder of a microSD card (FAT16, FAT32 or exFAT) in the Tee
 
 None of these are decided yet.
 
-- **Audio in.** A one-transistor amplifier and a small speaker, like the circuit in the KIM-1 manual, driven by a PAL-2 port pin. Then programs such as MUSICBOX from *The First Book of KIM* play without another board. The signal never touches a Teensy pin, so 5 V is fine. The Teensy's bell output could feed the same amplifier through its own resistor, so one speaker and one volume pot serve both.
+- **Audio in: LM386 mixer and speaker.** A PAL-2 port pin and the Teensy's bell pin share one speaker and one volume pot. Then programs such as MUSICBOX from *The First Book of KIM* play without another board. The LM386 is an 8-pin audio amplifier that runs from 5 V and drives an 8 Ω speaker at about ½ W; a plain op-amp can't drive a speaker directly.
+
+  ```
+  Teensy pin 19 ──1 µF──47 kΩ──┐
+                               ├──── pot top (10 kΩ log)
+  PAL-2 port pin ─1 µF──47 kΩ──┘     pot wiper ──→ LM386 IN+ (pin 3)
+                                     pot bottom ──→ GND
+                                                   LM386 IN− (pin 2) → GND
+
+  LM386 OUT (pin 5) ──250 µF (+ toward LM386)──→ speaker (8 Ω) ──→ GND
+                    └─10 Ω──0.05 µF──→ GND       (keeps it from oscillating)
+  LM386 pin 6 → 5 V, with 100 µF + 0.1 µF to GND close to the chip
+  LM386 pin 7 → 10 µF to GND                     (cuts supply noise)
+  LM386 pin 4 → GND
+  ```
+
+  - The 1 µF capacitors block DC, so it doesn't matter whether a pin idles high or low.
+  - The 47 kΩ resistors mix the two sources, keep their outputs from fighting, and cut the full-volume square waves down for the LM386's gain of 20. Increase them if it's too loud at the bottom of the pot.
+  - The PAL-2's 5 V signal meets only resistors and capacitors, never a Teensy pin. Its ground comes through the TTL cable.
+  - The speaker replaces the piezo. Pin 19 and the firmware stay the same.
+  - If digital noise from the shared 5 V rail comes through as a buzz, filter the LM386's supply: 10 Ω in series and another 100 µF to GND.
 - **DB-9 RS-232 port.** A MAX3232 transceiver and a DB-9 wired as DTE, like a PC's serial port, so a straight cable reaches DCE machines such as the PAL-1. Keep the TTL header for the PAL-2: the TTL header on `Serial1`, the DB-9 on `Serial2`, and a setting picks the active one.
 - **Settings screen.** Instead of DIP switches: a key such as F1 opens a settings screen, with the choices saved in the Teensy's EEPROM. Settings: baud rate, data bits / parity / stop bits, which port, local echo, adding LF after CR, upper-case only, text color. Holding a key at power-up restores the defaults. Fuller support for other machines would eventually need a subset of cursor-control codes, such as VT52 or ADM-3A.
 - **More from the SD card.** The basic loader works (see "Loading files from the SD card"). Still to do: folders, Intel HEX converted to MOS paper-tape format as it's sent, and capturing a tape the PAL-2 punches with `Q` into a new file.
