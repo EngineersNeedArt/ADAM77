@@ -36,10 +36,10 @@ Adam77 takes the adapter's place: each Teensy pin goes where the matching adapte
 | adapter's **RXD** wire, which comes from PAL-2 TX | **pin 0 (RX1)**, through the level shifter below. |
 | GND | GND |
 
-**Check first:** measure the PAL-2's TX line with a multimeter while it's idle. It idles high.
+**Check first:** measure the PAL-2's TX line with a multimeter while it's idle. It idles high. On the PAL-2 header, this is the pin labeled **RXD**: the labels are from the adapter's point of view. Ours measured **4.18 V**.
 - About **3.3 V**: wire it straight to pin 0.
-- About **5 V**: it must be shifted down. The Teensy 4.1 is **not** 5 V tolerant. Use either:
-  - **Resistor divider:** PAL-2 TX → 10 kΩ → pin 0, then pin 0 → 15 kΩ → GND. That gives about 3.0 V, and is plenty fast for 1200 baud.
+- Above that: it must be shifted down. The Teensy 4.1 is **not** 5 V tolerant. Use either:
+  - **Resistor divider:** PAL-2 TX → 10 kΩ → pin 0, then pin 0 → 20 kΩ → GND (two 10 kΩ in series). That gives about 2.8 V from 4.18 V, and still only 3.3 V if the line ever reaches a full 5 V. It's plenty fast for 1200 baud. (A 10 kΩ / 15 kΩ divider gives only about 2.5 V from 4.18 V, too close to the Teensy's 2.3 V minimum for a reliable high.)
   - **74LVC245, as on Adam74:**
     - Power: VCC (pin 20) to 3.3V, GND (pin 10) to GND
     - Direction: DIR (pin 1) to 3.3V, so data flows A → B
