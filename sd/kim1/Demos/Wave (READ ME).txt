@@ -1,0 +1,5 @@
+Wave (an LED demo)
+----------------------------------------
+Start: 0200 G
+
+Displays a "wave" across the LEDs.

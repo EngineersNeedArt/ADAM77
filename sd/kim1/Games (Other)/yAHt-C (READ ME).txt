@@ -1,0 +1,17 @@
+YAHt-C (a dice game)
+----------------------------------------
+Start: 0200 G
+
+GO starts a game.
+You have three chances to roll five dice
+to score. After first roll, toggle which
+dice to re-roll. The dice are numbered
+(1-5). A flashing die will be re-rolled.
+Press DA to re-roll.
+
+After the 2nd re-roll, your dice will be
+scored. Press AD any time to score the 
+dice without re-rolling.
+
+When the game ends your final score is 
+displayed. Press GO to start a new game.

@@ -1,0 +1,21 @@
+SLOtS (a slot machine game)
+----------------------------------------
+Start: 0200 G
+
+Instructions: Press a button to spin 
+  the reels. 1 credit cost to spin. GO 
+  starts a new game if you lose all your
+  credits.
+
+Symbols:
+  seven (7),
+  bar (-), 
+  double-toothpicks (||)
+  cherry (d)
+
+        7    7    7    pays 50
+       BAR  BAR  BAR   pays 15
+       ||   ||   ||    pays  5
+        d    d    d    pays  4
+        d    d    any  pays  2
+        d    any  any  pays  1
