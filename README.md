@@ -31,7 +31,8 @@ pio device monitor   # USB debug console
 - **Through-hole parts** everywhere except the USB-C jack, whose six power-only pads are large enough to hand-solder. The level shifter is a **74HC4050** (DIP-16) instead of the 74LVC245, which isn't made in DIP. Powered at 3.3 V, its inputs accept 5 V and its outputs are 3.3 V. The polyfuse is the radial Bourns MF-RG1100.
 - **The Teensy 4.1** symbol and footprint are in the project's own library (`ADAM77.kicad_sym`, `ADAM77.pretty`). The footprint covers the 48 outer pins only. The USB host pins come out on J4, a 5-pin header for a short cable from the Teensy, since their exact position on the Teensy isn't modeled.
 - **To start the PCB:** open the PCB editor and choose Tools → Update PCB from Schematic (F8) to pull in all the footprints.
-- **Still to confirm:** the pin order of J2 (to match the PAL-2's adapter cable) and of J4 (the Teensy's USB host pins: 5V, D−, D+, GND, GND).
+- **J2 (PAL-2):** 1 GND, 2 +5V, 3 `TTL (IN) KYBD`, 4 `TTL (OUT) PTR`. The PAL-2 has no standard cable, so make a 4-wire one to match.
+- **J4 (USB host):** 5V, D−, D+, GND, GND, the same order as the Teensy 4.1's host pins.
 
 ## Loading files from the SD card
 
