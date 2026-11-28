@@ -4,7 +4,8 @@
 //
 //   USB keyboard (USB host port) --> Serial1 TX --> KIM-1 TTY input
 //   KIM-1 TTY output --> Serial1 RX --> 40x24 text on an ILI9341 320x240 TFT
-//   F2: pick a file on the microSD card and send it to the KIM-1 (paper tapes)
+//   F2: pick a file on the microSD card: send it to the KIM-1 (paper tapes, BASIC)
+//       or read it on the screen (.txt)
 //
 // The display code descends from Adam74 (github.com/EngineersNeedArt/Adam74).
 // ==============================================================================
@@ -38,6 +39,14 @@
 #define CHAR_Y_MARGIN           1
 #define CURSOR_FLASH_INTERVAL   500
 
+// Colors: white for Adam77's own text (banners, selection bar, startup message), green
+// for anything sent to the KIM-1 (the terminal's own color), dark green for files that
+// are only read.
+#define CHROME_COLOR            ILI9341_WHITE
+#define RGB565(r, g, b)         ((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))  // 0-255 each.
+#define READ_ONLY_COLOR         RGB565 (0, 102, 0)  // Dark green, 40% of the terminal's.
+#define CHROME_FLAG             0x80    // Set on text-buffer characters drawn in CHROME_COLOR.
+
 #define ASCII_BEL               0x07
 #define ASCII_BS                0x08
 #define ASCII_LF                0x0A
@@ -53,6 +62,12 @@
 #define MENU_FIRST_ROW          2       // Rows 0-1: title. Rows 2-21: files. Row 23: help.
 #define MENU_LIST_ROWS          20
 #define ECHO_TIMEOUT_MS         50      // A character takes about 9 ms at 1200 baud 8N2.
+#define MENU_TYPE_COLUMN        34      // File type label (TAPE, BASIC, TEXT) in the menu.
+#define VIEW_FIRST_ROW          1       // Row 0: file name. Rows 1-22: text. Row 23: help.
+#define VIEW_ROWS               22
+#define VIEW_BUFFER_SIZE        65536   // Longer text files are cut off.
+#define VIEW_MAX_LINES          8192
+#define TAB_WIDTH               8
 
 ILI9341_t3 tft = ILI9341_t3 (TFT_CS, TFT_DC);
 TextBuffer text = TextBuffer ();
@@ -72,7 +87,7 @@ int16_t cursor_y = 0;
 bool cursor_visible = false;
 elapsedMillis cursor_timer;
 
-enum Mode { MODE_TERMINAL, MODE_FILE_MENU, MODE_SENDING };
+enum Mode { MODE_TERMINAL, MODE_FILE_MENU, MODE_SENDING, MODE_VIEWING };
 Mode mode = MODE_TERMINAL;
 
 char tape_names[MAX_TAPE_FILES][MAX_TAPE_NAME];
@@ -83,31 +98,52 @@ const char *menu_message = NULL;    // Shown instead of the list (no card, no fi
 int16_t pending_send = -1;          // Index of the file to send, set by the menu.
 bool cancel_send = false;
 
+// The extension says what a file is. Other files are sent as typed, unless they start with ';'.
+enum FileType { FILE_OTHER, FILE_TAPE, FILE_BASIC, FILE_TEXT };
+
+// Text viewer: the file in RAM, split into screen lines (word-wrapped to 40 columns).
+DMAMEM char view_buffer[VIEW_BUFFER_SIZE];
+DMAMEM uint32_t view_line_start[VIEW_MAX_LINES];
+DMAMEM uint8_t view_line_length[VIEW_MAX_LINES];
+int16_t view_line_count = 0;
+int16_t view_top = 0;
+int16_t view_file = 0;              // Index in tape_names.
+
 // ------------------------------------------------------------------------------
 // Display
 // ------------------------------------------------------------------------------
 
-void draw_char_at (int16_t col, int16_t row, char character, bool inverted) {
+void draw_char_colored (int16_t col, int16_t row, char character, bool inverted, uint16_t color) {
     int16_t x = col * X_ADVANCE;
     int16_t y = row * Y_ADVANCE;
-    tft.fillRect (x, y, X_ADVANCE, Y_ADVANCE, inverted ? foreground_color : background_color);
+    tft.fillRect (x, y, X_ADVANCE, Y_ADVANCE, inverted ? color : background_color);
     if (character > ' ') {
         tft.setCursor (x + CHAR_X_MARGIN, y + CHAR_Y_MARGIN);
-        tft.setTextColor (inverted ? background_color : foreground_color);
+        tft.setTextColor (inverted ? background_color : color);
         tft.drawFontChar (character);
     }
 }
 
+void draw_char_at (int16_t col, int16_t row, char character, bool inverted) {
+    draw_char_colored (col, row, character, inverted, foreground_color);
+}
+
 void draw_cell (int16_t col, int16_t row, bool inverted) {
-    draw_char_at (col, row, text.getCharRowColumn (row, col) & 0x7F, inverted);
+    char character = text.getCharRowColumn (row, col);
+    uint16_t color = (character & CHROME_FLAG) ? CHROME_COLOR : foreground_color;
+    draw_char_colored (col, row, character & 0x7F, inverted, color);
 }
 
 // Draws 'string' starting at 'col', padded with spaces (or cut off) to 'width' cells.
-void draw_string_at (int16_t col, int16_t row, const char *string, bool inverted, int16_t width) {
+void draw_string_colored (int16_t col, int16_t row, const char *string, bool inverted, int16_t width, uint16_t color) {
     for (int16_t i = 0; i < width && col + i < NUM_COLUMNS; i++) {
         char character = *string ? *string++ : ' ';
-        draw_char_at (col + i, row, character, inverted);
+        draw_char_colored (col + i, row, character, inverted, color);
     }
+}
+
+void draw_string_at (int16_t col, int16_t row, const char *string, bool inverted, int16_t width) {
+    draw_string_colored (col, row, string, inverted, width, foreground_color);
 }
 
 void refresh_display () {
@@ -150,7 +186,8 @@ void beep () {
     tone (PIEZO, 1760, 60);
 }
 
-void handle_host_char (char c) {
+// 'chrome' marks Adam77's own messages, drawn in CHROME_COLOR.
+void handle_host_char (char c, bool chrome = false) {
     c &= 0x7F;      // The KIM-1 does not drive bit 7 meaningfully.
     hide_cursor ();
     switch (c) {
@@ -165,7 +202,7 @@ void handle_host_char (char c) {
             break;
         default:
             if (c >= ' ' && c < ASCII_RUBOUT) {
-                text.setCharRowColumn (c, cursor_y, cursor_x);
+                text.setCharRowColumn (chrome ? (c | CHROME_FLAG) : c, cursor_y, cursor_x);
                 draw_cell (cursor_x, cursor_y, false);
                 cursor_x++;
                 if (cursor_x >= NUM_COLUMNS) {
@@ -208,6 +245,37 @@ int compare_names (const void *a, const void *b) {
     return strcasecmp ((const char *) a, (const char *) b);
 }
 
+FileType file_type (const char *name) {
+    const char *dot = strrchr (name, '.');
+    if (!dot) {
+        return FILE_OTHER;
+    }
+    if (!strcasecmp (dot, ".pap") || !strcasecmp (dot, ".ptp")) {
+        return FILE_TAPE;
+    }
+    if (!strcasecmp (dot, ".bas")) {
+        return FILE_BASIC;
+    }
+    if (!strcasecmp (dot, ".txt")) {
+        return FILE_TEXT;
+    }
+    return FILE_OTHER;
+}
+
+const char *file_type_label (FileType type) {
+    switch (type) {
+        case FILE_TAPE:     return "TAPE";
+        case FILE_BASIC:    return "BASIC";
+        case FILE_TEXT:     return "TEXT";
+        default:            return "";
+    }
+}
+
+// Menu color for each type: green for files that are sent, gray for files that are read.
+uint16_t file_type_color (FileType type) {
+    return (type == FILE_TEXT) ? READ_ONLY_COLOR : foreground_color;
+}
+
 // Fills tape_names with the files in the card's top folder, sorted by name.
 void read_tape_directory () {
     tape_count = 0;
@@ -237,7 +305,7 @@ void read_tape_directory () {
 }
 
 void draw_file_menu () {
-    draw_string_at (0, 0, " SEND FILE FROM SD CARD", true, NUM_COLUMNS);
+    draw_string_colored (0, 0, " FILES ON SD CARD", true, NUM_COLUMNS, CHROME_COLOR);
     draw_string_at (0, 1, "", false, NUM_COLUMNS);
     for (int16_t i = 0; i < MENU_LIST_ROWS; i++) {
         int16_t row = MENU_FIRST_ROW + i;
@@ -246,14 +314,23 @@ void draw_file_menu () {
             draw_string_at (1, row, menu_message, false, NUM_COLUMNS - 1);
         } else if (!menu_message && index < tape_count) {
             draw_string_at (0, row, "", false, 1);
-            draw_string_at (1, row, tape_names[index], index == menu_selection, NUM_COLUMNS - 2);
+            bool selected = (index == menu_selection);
+            FileType type = file_type (tape_names[index]);
+            uint16_t color = selected ? CHROME_COLOR : file_type_color (type);
+            char name[MAX_TAPE_NAME];
+            strlcpy (name, tape_names[index], sizeof (name));
+            if (type != FILE_OTHER) {
+                *strrchr (name, '.') = 0;   // The type label stands in for the extension.
+            }
+            draw_string_colored (1, row, name, selected, MENU_TYPE_COLUMN - 1, color);
+            draw_string_colored (MENU_TYPE_COLUMN, row, file_type_label (type), selected, NUM_COLUMNS - 1 - MENU_TYPE_COLUMN, color);
             draw_string_at (NUM_COLUMNS - 1, row, "", false, 1);
         } else {
             draw_string_at (0, row, "", false, NUM_COLUMNS);
         }
     }
     draw_string_at (0, NUM_ROWS - 2, "", false, NUM_COLUMNS);
-    draw_string_at (0, NUM_ROWS - 1, menu_message ? " ESC: BACK" : " ENTER: SEND   ESC: BACK", true, NUM_COLUMNS);
+    draw_string_colored (0, NUM_ROWS - 1, menu_message ? " ESC: BACK" : " ENTER: SEND OR VIEW   ESC: BACK", true, NUM_COLUMNS, CHROME_COLOR);
 }
 
 void open_file_menu () {
@@ -264,6 +341,8 @@ void open_file_menu () {
     menu_top = 0;
     draw_file_menu ();
 }
+
+void open_text_viewer (int16_t index);
 
 void close_file_menu () {
     mode = MODE_TERMINAL;
@@ -288,8 +367,12 @@ void file_menu_key (int key) {
         case KEYD_END:          selection = tape_count - 1;     break;
         case ASCII_LF:
         case ASCII_CR:
-            pending_send = menu_selection;      // loop () sends it once the menu is closed.
-            close_file_menu ();
+            if (file_type (tape_names[menu_selection]) == FILE_TEXT) {
+                open_text_viewer (menu_selection);
+            } else {
+                pending_send = menu_selection;  // loop () sends it once the menu is closed.
+                close_file_menu ();
+            }
             return;
         default:
             return;
@@ -317,9 +400,9 @@ void send_paced (char c) {
     }
 }
 
-// Paper-tape files (first character ';') are sent after an "L", which puts the KIM-1
-// monitor in paper-tape load mode, with CR LF line ends. Any other file is sent as if
-// typed, with CR line ends (BASIC listings and the like).
+// Paper tapes (.pap, .ptp, or any other file whose first character is ';') are sent after
+// an "L", which puts the KIM-1 monitor in paper-tape load mode, with CR LF line ends.
+// Other files (.bas listings and the like) are sent as if typed, with CR line ends.
 void send_file (const char *name) {
     File file = SD.open (name);
     if (!file) {
@@ -331,8 +414,9 @@ void send_file (const char *name) {
         file.read ();
         first = file.peek ();
     }
-    bool is_tape = (first == ';');
-    Serial.printf ("send: %s (%s)\n", name, is_tape ? "paper tape" : "text");
+    FileType type = file_type (name);
+    bool is_tape = (type == FILE_TAPE || (type == FILE_OTHER && first == ';'));
+    Serial.printf ("send: %s (%s)\n", name, is_tape ? "paper tape" : "typed");
 
     mode = MODE_SENDING;
     cancel_send = false;
@@ -363,6 +447,133 @@ void send_file (const char *name) {
 }
 
 // ------------------------------------------------------------------------------
+// Text viewer: .txt files are shown on the screen and not sent (instructions, notes)
+// ------------------------------------------------------------------------------
+
+// Reads the file into view_buffer: tabs expanded, CR LF and lone CR turned into LF,
+// other control characters dropped. Returns false if the file can't be opened.
+bool load_text_file (const char *name) {
+    File file = SD.open (name);
+    if (!file) {
+        return false;
+    }
+    uint32_t length = 0;
+    int16_t column = 0;
+    char previous = 0;
+    while (file.available () && length < VIEW_BUFFER_SIZE) {
+        char c = file.read ();
+        if (c == ASCII_LF && previous == ASCII_CR) {
+            previous = c;
+            continue;       // Second half of a CR LF.
+        }
+        previous = c;
+        if (c == ASCII_CR || c == ASCII_LF) {
+            view_buffer[length++] = ASCII_LF;
+            column = 0;
+        } else if (c == '\t') {
+            do {
+                view_buffer[length++] = ' ';
+                column++;
+            } while (column % TAB_WIDTH && length < VIEW_BUFFER_SIZE);
+        } else if (c >= ' ' && c < ASCII_RUBOUT) {
+            view_buffer[length++] = c;
+            column++;
+        }
+    }
+    if (file.available ()) {
+        Serial.printf ("view: %s cut off at %d bytes\n", name, VIEW_BUFFER_SIZE);
+    }
+    file.close ();
+
+    // Split into screen lines, breaking long lines at the last space that fits.
+    view_line_count = 0;
+    uint32_t start = 0;
+    while (start < length && view_line_count < VIEW_MAX_LINES) {
+        uint32_t end = start;
+        while (end < length && view_buffer[end] != ASCII_LF && end - start < NUM_COLUMNS) {
+            end++;
+        }
+        uint32_t next = end + 1;        // Skip the LF.
+        if (end < length && view_buffer[end] != ASCII_LF) {
+            next = end;                 // Hit the right edge: wrap.
+            uint32_t space = end;
+            while (space > start && view_buffer[space] != ' ') {
+                space--;
+            }
+            if (space > start) {
+                end = space;            // Break at the space and drop it.
+                next = space + 1;
+            }
+        }
+        view_line_start[view_line_count] = start;
+        view_line_length[view_line_count] = end - start;
+        view_line_count++;
+        start = next;
+    }
+    return true;
+}
+
+void draw_text_viewer () {
+    for (int16_t i = 0; i < VIEW_ROWS; i++) {
+        int16_t line = view_top + i;
+        int16_t length = (line < view_line_count) ? view_line_length[line] : 0;
+        const char *chars = view_buffer + ((line < view_line_count) ? view_line_start[line] : 0);
+        for (int16_t col = 0; col < NUM_COLUMNS; col++) {
+            draw_char_at (col, VIEW_FIRST_ROW + i, col < length ? chars[col] : ' ', false);
+        }
+    }
+    char help[64];      // Cut to NUM_COLUMNS when drawn.
+    int16_t last = min (view_top + VIEW_ROWS, (int) view_line_count);
+    snprintf (help, sizeof (help), " ESC: BACK  SPACE: MORE  %d-%d/%d", view_line_count ? view_top + 1 : 0, last, view_line_count);
+    draw_string_colored (0, NUM_ROWS - 1, help, true, NUM_COLUMNS, CHROME_COLOR);
+}
+
+void open_text_viewer (int16_t index) {
+    if (!load_text_file (tape_names[index])) {
+        beep ();
+        return;
+    }
+    Serial.printf ("view: %s (%d lines)\n", tape_names[index], view_line_count);
+    mode = MODE_VIEWING;
+    view_file = index;
+    view_top = 0;
+    char title[NUM_COLUMNS + 1];
+    snprintf (title, sizeof (title), " %s", tape_names[index]);
+    draw_string_colored (0, 0, title, true, NUM_COLUMNS, CHROME_COLOR);
+    draw_text_viewer ();
+}
+
+void text_viewer_key (int key) {
+    if (key == FILE_MENU_KEY) {
+        close_file_menu ();     // Straight back to the terminal.
+        return;
+    }
+    if (key == ASCII_ESC) {
+        mode = MODE_FILE_MENU;  // Back to the list, with the same file selected.
+        draw_file_menu ();
+        return;
+    }
+    int16_t top = view_top;
+    switch (key) {
+        case KEYD_UP:           top--;                                  break;
+        case KEYD_DOWN:
+        case ASCII_LF:
+        case ASCII_CR:          top++;                                  break;
+        case KEYD_PAGE_UP:      top -= VIEW_ROWS - 1;                   break;
+        case ' ':
+        case KEYD_PAGE_DOWN:    top += VIEW_ROWS - 1;                   break;
+        case KEYD_HOME:         top = 0;                                break;
+        case KEYD_END:          top = view_line_count - VIEW_ROWS;      break;
+        default:                return;
+    }
+    top = constrain (top, 0, max (0, view_line_count - VIEW_ROWS));
+    if (top != view_top) {
+        view_top = top;
+        draw_text_viewer ();
+    }
+}
+
+// ------------------------------------------------------------------------------
 
 void on_keyboard_press (int key) {
     Serial.printf ("key: 0x%02X\n", key);     // Bring-up aid: log what the USB keyboard sends.
@@ -376,6 +587,9 @@ void on_keyboard_press (int key) {
             break;
         case MODE_FILE_MENU:
             file_menu_key (key);
+            break;
+        case MODE_VIEWING:
+            text_viewer_key (key);
             break;
         case MODE_SENDING:
             if (key == ASCII_ESC) {
@@ -427,7 +641,7 @@ void setup () {
 
     const char *banner = "ADAM77 READY\r\n";
     while (*banner) {
-        handle_host_char (*banner++);
+        handle_host_char (*banner++, true);
     }
     beep ();
 }

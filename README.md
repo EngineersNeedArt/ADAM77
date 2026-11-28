@@ -38,12 +38,21 @@ pio device monitor   # USB debug console
 
 Put files in the top folder of a microSD card (FAT16, FAT32 or exFAT) in the Teensy 4.1's own card socket.
 
-1. At the KIM-1 monitor prompt, press **F2**. A list of the card's files appears.
-2. Choose one with the arrow keys (Page Up/Down and Home/End also work), then press **Enter**. Press **Esc** to go back without sending.
-3. Adam77 sends the file:
-   - **Paper tapes** (files whose first character is `;`, in MOS Technology format): it types `L` first, putting the monitor in paper-tape load mode.
-   - **Any other file** is sent as if typed, with CR line ends. Use this for BASIC listings and the like.
-4. Each character waits for the KIM-1's echo before the next is sent, so the load runs as fast as the KIM-1 can take it. Press **Esc** to stop a send. A beep means it's finished.
+1. At the KIM-1 monitor prompt, press **F2**. A list of the card's files appears. Known types show their name without the extension, plus a type label. Files that are sent (TAPE, BASIC) are green; text files, which are only read, are dark green. The banners, the selection bar and the startup message are white.
+2. Choose one with the arrow keys (Page Up/Down and Home/End also work), then press **Enter**. Press **Esc** to go back.
+3. The file's extension decides what happens:
+
+   | Extension | Type | What Enter does |
+   | --- | --- | --- |
+   | `.pap`, `.ptp` | TAPE | Sends it as a paper tape (MOS Technology format): types `L` first, putting the monitor in paper-tape load mode, then sends the tape with CR LF line ends. |
+   | `.bas` | BASIC | Sends it as if typed, with CR line ends. |
+   | `.txt` | TEXT | Shows it on the screen only; nothing goes to the KIM-1. |
+   | anything else | | Sent as a paper tape if its first character is `;`, otherwise as if typed. |
+
+4. Sending waits for the KIM-1's echo of each character before sending the next, so it runs as fast as the KIM-1 can take it. Press **Esc** to stop a send. A beep means it's finished.
+5. A text file is word-wrapped to 40 columns. Scroll with the arrow keys, **Space** or Page Up/Down, and Home/End. **Esc** goes back to the file list; **F2** goes straight back to the terminal. Files over 64 KB are cut off.
+
+A text file is a handy place for a program's instructions: put `slots.txt` (for example, "0200 G to start") next to `slots.pap`.
 
 ## Design notes
 
