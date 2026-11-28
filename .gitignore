@@ -9,3 +9,4 @@ fp-info-cache
 *.lck
 _autosave-*
 \#auto_saved_files#
+.history/
