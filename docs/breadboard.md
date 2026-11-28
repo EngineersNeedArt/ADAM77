@@ -6,7 +6,8 @@ There's no polyfuse on the breadboard. Each board keeps its own power, and only 
 
 - **Teensy:** power it from its micro-USB cable to the Mac, the same cable used for programming. Leave the Teensy's VUSB–VIN trace intact. **VIN** is then the 5 V rail, and **3.3V** is the Teensy's regulator output.
 - **PAL-2:** keep powering it from its USB-to-TTL adapter, but use only the adapter's 5 V and GND wires. Its TXD and RXD wires come off the PAL-2 and go to the Teensy instead (see below).
-- **Never connect the two boards' 5 V lines together.** Join their grounds only.
+- **Never connect the two boards' 5 V lines together.**
+- **Always connect the two boards' grounds** with a GND wire run alongside TX and RX. Without it, the serial signals return only through the USB cables and the Mac. Characters then get garbled: during tape loads the screen clears itself and beeps at random (stray 0x0C and 0x07 bytes). It also protects the Teensy if the PAL-2 is ever powered from a separate supply.
 - **Connect a Teensy GND pin to the breadboard's ground rail.** Without it, the TFT's backlight still lights (dimly) through the signal lines, but the display ignores every command and the screen stays blank.
 
 ## ILI9341 TFT (SPI module)

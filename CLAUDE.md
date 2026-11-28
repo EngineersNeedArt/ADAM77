@@ -20,7 +20,7 @@ pio device monitor   # USB debug console, 115200
 
 - **Teensy 4.1 pins are not 5 V tolerant.** The PAL-2's serial output must go through a level shifter (divider on the breadboard, 74HC4050 on the board) before it reaches pin 0.
 - **PAL-2 Application Connector serial pins:** **`TTL (OUT) PTR`** is the PAL-2's *output* (idle about 4.2 V; the adapter's RXD wire went here). It goes to Teensy pin 0 through the shifter. **`TTL (IN) KYBD`** is the PAL-2's input (the adapter's TXD wire) and goes straight to pin 1.
-- On the breadboard, the PAL-2 keeps its own power from its adapter (5 V and GND wires only). Connect only GND, TX and RX to Adam77, and never join the two boards' 5 V lines. Disconnect the adapter's TXD/RXD wires so they don't drive the same lines as the Teensy.
+- On the breadboard, the PAL-2 keeps its own power from its adapter (5 V and GND wires only). Connect only GND, TX and RX to Adam77, and never join the two boards' 5 V lines. **The GND wire is required:** without it the serial link has no direct return path, and characters get garbled (random screen clears and beeps during tape loads). Disconnect the adapter's TXD/RXD wires so they don't drive the same lines as the Teensy.
 - **The Teensy's GND must be connected to the breadboard ground rail.** Without it the TFT backlight still lights dimly, but the display ignores every command.
 
 ## Code notes
