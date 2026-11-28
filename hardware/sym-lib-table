@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "ADAM77")(type "KiCad")(uri "${KIPRJMOD}/ADAM77.kicad_sym")(options "")(descr "Adam77 parts"))
+)

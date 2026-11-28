@@ -11,7 +11,7 @@ Adam77 follows [Adam74](https://github.com/EngineersNeedArt/Adam74). Adam74 took
 | `src/main.cpp` | Firmware |
 | `lib/TextBuffer/` | Text grid class, from Adam74 |
 | `lib/Fonts/` | Liberation Mono Bold, from Adam74 |
-| `hardware/` | KiCad project (to come) |
+| `hardware/` | KiCad project (rough schematic; see below) |
 | `platformio.ini` | Build configuration |
 
 ## Building
@@ -21,6 +21,17 @@ pio run              # build
 pio run -t upload    # build and flash (Teensy Loader opens)
 pio device monitor   # USB debug console
 ```
+
+## Hardware (KiCad)
+
+`hardware/ADAM77.kicad_pro` opens in KiCad 10. It's a rough first pass, generated rather than drawn by hand, so expect to tidy the layout.
+
+- **The schematic** covers USB-C 5 V input (with CC pull-downs), the Teensy 4.1, the PAL-2 TTL header (74HC4050 on the PAL-2's output, polyfuse on its 5 V), the TFT header, the USB host jack and the LM386 audio section.
+- **ERC:** no errors or warnings.
+- **Through-hole parts** everywhere except the USB-C jack, whose six power-only pads are large enough to hand-solder. The level shifter is a **74HC4050** (DIP-16) instead of the 74LVC245, which isn't made in DIP. Powered at 3.3 V, its inputs accept 5 V and its outputs are 3.3 V. The polyfuse is the radial Bourns MF-RG1100.
+- **The Teensy 4.1** symbol and footprint are in the project's own library (`ADAM77.kicad_sym`, `ADAM77.pretty`). The footprint covers the 48 outer pins only. The USB host pins come out on J4, a 5-pin header for a short cable from the Teensy, since their exact position on the Teensy isn't modeled.
+- **To start the PCB:** open the PCB editor and choose Tools → Update PCB from Schematic (F8) to pull in all the footprints.
+- **Still to confirm:** the pin order of J2 (to match the PAL-2's adapter cable) and of J4 (the Teensy's USB host pins: 5V, D−, D+, GND, GND).
 
 ## Loading files from the SD card
 
@@ -36,7 +47,7 @@ Put files in the top folder of a microSD card (FAT16, FAT32 or exFAT) in the Tee
 ## Design notes
 
 - **Serial:** Uses the Teensy's hardware UART (`Serial1`, pins 0/1) at 1200 baud 8N2. Nothing is bit-banged. The KIM-1 measures the baud rate from the first RUBOUT after reset, so any standard rate works.
-- **Line interface (target: PAL-2):** The PAL-2 KIM-1 replica has a 5 V TTL serial port, the same kind its bundled USB-to-TTL adapter plugs into. Its idle line is high, as on a standard UART, so no inversion is needed. The Teensy 4.1's pins are **not 5 V tolerant**, so the PAL-2's TX line must be shifted down before it reaches Teensy RX1, for example by the 74LVC245 that Adam74 used. The Teensy's 3.3 V TX output is normally above a 5 V TTL input's 2.0 V high threshold, so that direction can connect directly. Adam77 takes the place of the PAL-2's USB-to-TTL adapter and uses the same four wires: TXD, RXD, 5 V and GND.
+- **Line interface (target: PAL-2):** The PAL-2 KIM-1 replica has a 5 V TTL serial port, the same kind its bundled USB-to-TTL adapter plugs into. Its idle line is high, as on a standard UART, so no inversion is needed. The Teensy 4.1's pins are **not 5 V tolerant**, so the PAL-2's TX line must be shifted down before it reaches Teensy RX1, for example by a 74HC4050 (DIP) or the 74LVC245 that Adam74 used. The Teensy's 3.3 V TX output is normally above a 5 V TTL input's 2.0 V high threshold, so that direction can connect directly. Adam77 takes the place of the PAL-2's USB-to-TTL adapter and uses the same four wires: TXD, RXD, 5 V and GND.
 - **Power (decided):** Adam77 powers the PAL-2 through that 5 V wire, the same way the adapter does. One 5 V USB supply feeds Adam77's power jack and becomes the board's 5 V rail. That rail supplies:
   - the Teensy's VIN pin
   - the USB host port, for the keyboard
@@ -55,7 +66,7 @@ Put files in the top folder of a microSD card (FAT16, FAT32 or exFAT) in the Tee
   | **Total** | **~0.75 A** | **~1.2 A** |
 
   - **Supply:** use a USB-C 5 V supply rated at least 2 A; 3 A is preferred. The board's USB-C jack needs 5.1 kΩ pull-downs on CC1 and CC2, or USB-C chargers won't turn on their 5 V output.
-  - **PAL-2 fuse:** a polyfuse that holds 1.1 A and trips at 2.2 A, such as the Bourns MF-MSMF110 (1812 size). The 476 mA peak is under half the hold rating. Its resistance drops only about 0.07 V at that current. A 0.75 A part would also work, but drops about twice as much voltage.
+  - **PAL-2 fuse:** a polyfuse that holds 1.1 A and trips at 2.2 A, such as the Bourns MF-RG1100 (radial, through-hole) or MF-MSMF110 (1812 surface mount). The 476 mA peak is under half the hold rating. Its resistance drops only about 0.07 V at that current. A 0.75 A part would also work, but drops about twice as much voltage.
   - **Keyboard port:** the Teensy 4.1's USB host header has its own current-limit switch, powered from VIN, so the PCB only needs a USB-A jack wired to the header.
 - **PAL-1:** Not the same interface. The PAL-1 adds a small discrete-transistor stage after the KIM-1 current loop to produce RS-232 levels on a DB-9 wired as DCE (data communications equipment). Supporting it would need an RS-232 transceiver such as the MAX3232 as an option.
 - **Board (decided): Teensy 4.1.** It has the same 600 MHz chip as the 4.0. We chose it for two things: the USB host header, which has current limiting built in, and the microSD socket, which could hold paper-tape files for Adam77 to send to the PAL-2 with echo pacing.
@@ -74,7 +85,7 @@ None of these are decided yet.
                                      pot bottom ──→ GND
                                                    LM386 IN− (pin 2) → GND
 
-  LM386 OUT (pin 5) ──250 µF (+ toward LM386)──→ speaker (8 Ω) ──→ GND
+  LM386 OUT (pin 5) ──220 µF (+ toward LM386)──→ speaker (8 Ω) ──→ GND
                     └─10 Ω──0.05 µF──→ GND       (keeps it from oscillating)
   LM386 pin 6 → 5 V, with 100 µF + 0.1 µF to GND close to the chip
   LM386 pin 7 → 10 µF to GND                     (cuts supply noise)
