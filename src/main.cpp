@@ -39,7 +39,7 @@
 #define CHAR_Y_MARGIN           1
 #define CURSOR_FLASH_INTERVAL   500
 
-// Colors: white for Adam77's own text (banners, selection bar, startup message), green
+// Colors: white for Adam77's own text (banners, folders, startup message), green
 // for anything sent to the KIM-1 (the terminal's own color), dark green for files that
 // are only read.
 #define CHROME_COLOR            ILI9341_WHITE
@@ -352,7 +352,8 @@ void draw_menu_row (int16_t i) {
         MenuEntry *entry = &entries[index];
         bool selected = (index == menu_selection);
         FileType type = entry->is_folder ? FILE_OTHER : file_type (entry->name);
-        uint16_t color = (selected || entry->is_folder) ? CHROME_COLOR : file_type_color (type);
+        // The selection bar is the entry's own color, inverted.
+        uint16_t color = entry->is_folder ? CHROME_COLOR : file_type_color (type);
         char name[MAX_ENTRY_NAME];
         strlcpy (name, entry->name, sizeof (name));
         if (type != FILE_OTHER) {

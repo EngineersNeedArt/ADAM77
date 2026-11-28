@@ -38,7 +38,7 @@ pio device monitor   # USB debug console
 
 Put files on a microSD card (FAT16, FAT32 or exFAT), in folders if you like, and put it in the Teensy 4.1's own card socket. [sd/](sd/) has a ready-made set of KIM-1 paper tapes to copy onto a card. Cards can be swapped while Adam77 is on, as long as nothing is being sent.
 
-1. At the KIM-1 monitor prompt, press **F2**. A list of the card's folders and files appears, folders first (in white, labeled FOLDER). The top line shows the folder you're in. Known types show their name without the extension, plus a type label. Files that are sent (TAPE, BASIC) are green; text files, which are only read, are dark green. The banners, the selection bar and the startup message are white.
+1. At the KIM-1 monitor prompt, press **F2**. A list of the card's folders and files appears, folders first (in white, labeled FOLDER). The top line shows the folder you're in. Known types show their name without the extension, plus a type label. Files that are sent (TAPE, BASIC) are green; text files, which are only read, are dark green. The banners and the startup message are white. The selection bar is the selected entry's own color, inverted.
 2. Choose one with the arrow keys (Page Up/Down and Home/End also work; holding an arrow repeats it), or type a letter or digit to jump to the next name starting with it. Then press **Enter**.
    - **Enter** (or Right arrow) on a folder opens it. **Esc**, Backspace or Left arrow goes back up a folder.
    - **Esc** in the top folder, or **F2** anywhere, goes back to the terminal. The next F2 opens the same folder again.
